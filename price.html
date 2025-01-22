@@ -63,7 +63,8 @@
 
   // (C) Fetch data from Flask API
   async function fetchPredictData() {
-    const url = "http://35.201.180.30:5000/predict";
+    // ★修改處★：改用您的 HTTPS 網址 (domain)，而非 HTTP IP
+    const url = "https://rainmaker32.com/predict";  
 
     const postBody = {
       symbol: symbol,
@@ -124,25 +125,15 @@
     // 3. extremes scatter with enlarged arrows
     const extremesTrace = {
       x: extremes.map(e => e.time),
-      y: extremes.map(e => {
-        // offset so arrow doesn't overlap candle
-        if (e.label === 1) {
-          // high => offset above
-          return e.close * 1.02; 
-        } else {
-          // low => offset below
-          return e.close * 0.98; 
-        }
-      }),
+      y: extremes.map(e => e.label === 1 ? e.close * 1.02 : e.close * 0.98),
       mode: 'markers',
       name: 'Extremes',
       text: extremes.map(e => e.label === 1 ? 'High' : 'Low'),
       hovertemplate: 'Time=%{x}<br>Price=%{y}<extra>%{text}</extra>',
       marker: {
-        // high => red, low => blue
         color: extremes.map(e => e.label === 1 ? 'red' : 'blue'),
         size: 12, // 增大標記大小
-        symbol: extremes.map(e => (e.label === 1 ? 'triangle-up' : 'triangle-down'))
+        symbol: extremes.map(e => e.label === 1 ? 'triangle-up' : 'triangle-down')
       },
       type: 'scatter',
       yaxis: 'y1'
@@ -165,19 +156,20 @@
 
     // 6. Determine default x-range => last 50 bars
     let xMin, xMax;
-    if (ohlc.length > 0) {
+    if (ohlc.length > 50) {
       const last50 = ohlc.slice(-50);
       xMin = last50[0].time;
       xMax = last50[last50.length - 1].time;
+    } else if (ohlc.length > 0) {
+      xMin = ohlc[0].time;
+      xMax = ohlc[ohlc.length - 1].time;
     } else {
-      // fallback if no data
       xMin = new Date().toISOString();
       xMax = new Date().toISOString();
     }
 
     // 7. Layout with subplots for candlestick and volume
     const layout = {
-      title: '', // 移除標題
       xaxis: {
         title: 'Time',
         type: 'date',
@@ -197,7 +189,7 @@
         anchor: 'x',
         side: 'left'
       },
-      dragmode: 'pan', // default to pan mode
+      dragmode: 'pan', // 預設為 pan 模式
       legend: {
         orientation: "h",
         x: 0.1,
@@ -207,12 +199,12 @@
     };
 
     // 8. Render with subplots
-    Plotly.newPlot('chart', allTraces, layout, {responsive: true});
+    Plotly.newPlot('chart', allTraces, layout, { responsive: true });
   }
 
   // (E) Handle Update Button Click
   document.getElementById('update_btn').addEventListener('click', () => {
-    // Get user-selected time_interval and extreme_window
+    // 取得使用者輸入的 time_interval 與 extreme_window
     time_interval = document.getElementById('time_interval').value;
     extreme_window = parseInt(document.getElementById('extreme_window').value) || 0;
 
@@ -223,7 +215,7 @@
   // (F) Initial Fetch & Auto-update every 10 seconds
   document.addEventListener("DOMContentLoaded", () => {
     fetchPredictData();
-    // Auto update every 10 sec
+    // 每 10 秒自動更新
     setInterval(() => {
       fetchPredictData();
     }, 10000);
