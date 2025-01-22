@@ -5,49 +5,43 @@
   <title>Plotly Candlestick + Extremes + Volume (Auto Refresh + Responsive Layout)</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    /* 1. 全域設定：自適應佈局、深色背景或普通背景都可 */
+    /* 1. 全域設定：自適應佈局、深色背景 */
     body {
       margin: 0;
       padding: 0;
       font-family: Arial, sans-serif;
       text-align: center;
-      background-color: #2d2d2d; /* 深色背景 */
-      color: #ccc;              /* 文字顏色 */
+      background-color: #2d2d2d;
+      color: #ccc;
     }
-
     /* 2. 容器寬度自適應 + 最大寬度 */
     #container {
       margin: 0 auto;
       padding: 10px;
-      max-width: 1200px; /* 視需求調整最大寬度 */
+      max-width: 1200px;
       width: 100%;
       box-sizing: border-box;
     }
-
     /* 3. 上方控制介面 */
     #controls {
       margin: 10px 0;
       display: flex;
-      flex-wrap: wrap;       /* 小螢幕時可自動換行 */
+      flex-wrap: wrap;
       justify-content: center;
       align-items: center;
-      gap: 10px;             /* 元素間距 */
+      gap: 10px;
     }
-
     #controls label {
       font-size: 1rem;
     }
-
     #controls select,
     #controls input {
       background-color: #444;
       color: #fff;
       border: 1px solid #666;
       padding: 6px 8px;
-      font-size: 1.2rem; /* ★ 調整字體更大 */
+      font-size: 1.2rem;
     }
-
-    /* 原本的 Update button 移除或保留都行。若保留可隱藏或不使用 */
     #update_btn {
       background-color: #555;
       color: #fff;
@@ -59,18 +53,15 @@
     #update_btn:hover {
       background-color: #666;
     }
-
     /* 4. 圖表區域：寬度隨容器自適應 */
     #chart {
       width: 100%;
       height: 600px; 
       margin: 0 auto;
     }
-
-    /* 針對更小螢幕時，可考慮再用 media query 做額外優化 */
     @media (max-width: 600px) {
       #chart {
-        height: 400px; /* 小螢幕時縮小些 */
+        height: 400px;
       }
     }
   </style>
@@ -78,6 +69,7 @@
 <body>
 
 <div id="container">
+  <!-- (A) 上方控制欄位 -->
   <div id="controls">
     <label for="time_interval">Time Interval:</label>
     <select id="time_interval">
@@ -88,23 +80,26 @@
     
     <label for="extreme_window">Extreme Window:</label>
     <input type="number" id="extreme_window" value="0" min="0" />
+  </div>
 
-    <!-- ★ 可以移除或隱藏按鈕；若想保留可設 display:none; -->
-    <!-- <button id="update_btn">Update Chart</button> -->
+  <!-- (B) 這裡顯示「倒數第二個 extreme 的可信度」 -->
+  <div id="confidence_div" style="margin: 10px 0; font-size: 1.2rem;">
+    <!-- 後續以 JS 動態填入 -->
   </div>
   
+  <!-- (C) 主圖表區 -->
   <div id="chart"></div>
 </div>
 
 <script>
-  // ===== (A) UTC -> 台灣時區 (UTC+8) =====
+  // ===== (1) UTC -> 台灣時區 (UTC+8) =====
   function toTaiwanTime(isoString) {
     const d = new Date(isoString);
     d.setHours(d.getHours() + 8);
     return d.toISOString().replace('Z', '');
   }
 
-  // ===== (B) 區分 cluster 用的顏色 =====
+  // ===== (2) 區分 cluster 用的顏色 =====
   const clusterColors = [
     '#66c2a5', // cluster=0
     '#fdae61', // cluster=1
@@ -118,9 +113,9 @@
   let time_interval = "15m";
   let extreme_window = 0;
 
-  // ===== (C) 向後端抓資料 =====
+  // ===== (3) 向後端抓資料 =====
   async function fetchPredictData() {
-    const url = "https://rainmaker32.com/predict"; // HTTPS API Endpoint
+    const url = "https://rainmaker32.com/predict"; // 範例：你的後端 API Endpoint
 
     const postBody = {
       symbol: symbol,
@@ -141,15 +136,33 @@
       const data = await res.json();
       console.log("Data from backend =", data);
 
+      // (A) 顯示倒數第二個極值的可信度
+      showSecondLastExtremeConfidence(data);
+
+      // (B) 轉成台灣時區
       convertToTaiwanTime(data);
+
+      // (C) 繪圖
       plotChart(data);
+
     } catch (err) {
       console.error("fetchPredictData() error:", err);
       alert("無法取得資料，請檢查控制台訊息！");
     }
   }
 
-  // ===== (D) 將extremes / ohlc的time欄位改為台灣時區 =====
+  // ===== (4) 顯示「倒數第二個 extreme 的可信度」 =====
+  function showSecondLastExtremeConfidence(data) {
+    const val = data.second_last_extreme_confidence;
+    const div = document.getElementById("confidence_div");
+    if (val !== undefined && val !== null) {
+      div.textContent = `倒數第二個極值的可信度: ${val.toFixed(4)}`;
+    } else {
+      div.textContent = "目前無法取得倒數第二個極值 (extreme) 的可信度。";
+    }
+  }
+
+  // ===== (5) 將extremes / ohlc的time欄位改為台灣時區 =====
   function convertToTaiwanTime(data) {
     const { extremes, ohlc } = data;
     if (extremes && extremes.length > 0) {
@@ -164,7 +177,7 @@
     }
   }
 
-  // ===== (E) 繪製圖表 =====
+  // ===== (6) 繪製圖表 =====
   function plotChart(data) {
     const extremes = data.extremes || [];
     const ohlc = data.ohlc || [];
@@ -173,7 +186,7 @@
     extremes.sort((a, b) => new Date(a.time) - new Date(b.time));
     ohlc.sort((a, b) => new Date(a.time) - new Date(b.time));
 
-    // 建立 K線 traces
+    // 建立 K線 traces (依 cluster 分組顯示)
     const uniqueClusters = [...new Set(ohlc.map(d => d.cluster))].sort((a, b) => a - b);
     const candlestickTraces = uniqueClusters.map(c => {
       const subset = ohlc.filter(x => x.cluster === c);
@@ -187,11 +200,11 @@
         name: `Cluster ${c}`,
         increasing: { line: { color: clusterColors[c] || 'gray' } },
         decreasing: { line: { color: clusterColors[c] || 'gray' } },
-        showlegend: c === 0
+        showlegend: c === 0  // 僅顯示第一組或皆顯示
       };
     });
 
-    // 極值
+    // 極值 scatter
     const extremesTrace = {
       x: extremes.map(e => e.time),
       y: extremes.map(e => e.label === 1 ? e.close * 1.02 : e.close * 0.98),
@@ -208,11 +221,9 @@
       yaxis: 'y1'
     };
 
-    // Volume trace (使用紅綠判斷)
+    // 交易量 bar
     const volumeColors = ohlc.map(d =>
-      (d.close > d.open)
-        ? 'rgba(0,255,0,0.5)'   // 綠
-        : 'rgba(255,0,0,0.5)'  // 紅
+      (d.close > d.open) ? 'rgba(0,255,0,0.5)' : 'rgba(255,0,0,0.5)'
     );
 
     const volumeTrace = {
@@ -224,10 +235,10 @@
       yaxis: 'y2'
     };
 
-    // 整合
+    // 整合所有 traces
     const allTraces = [...candlestickTraces, extremesTrace, volumeTrace];
 
-    // 初始 x 軸範圍
+    // 設定 layout
     let xMin, xMax;
     if (ohlc.length > 50) {
       const last50 = ohlc.slice(-50);
@@ -241,7 +252,6 @@
       xMax = new Date().toISOString();
     }
 
-    // 深色佈景
     const layout = {
       paper_bgcolor: "#2d2d2d",
       plot_bgcolor: "#2d2d2d",
@@ -280,7 +290,7 @@
     Plotly.newPlot('chart', allTraces, layout, { responsive: true });
   }
 
-  // (F) 自動更新 & 即時事件
+  // ===== (7) 綁定事件 & 自動刷新 =====
   document.getElementById('time_interval').addEventListener('change', () => {
     time_interval = document.getElementById('time_interval').value;
     fetchPredictData();
@@ -291,16 +301,9 @@
     fetchPredictData();
   });
 
-  // 移除或隱藏 Update 按鈕 => 可省略
-  // document.getElementById('update_btn').addEventListener('click', () => {
-  //   time_interval = document.getElementById('time_interval').value;
-  //   extreme_window = parseInt(document.getElementById('extreme_window').value) || 0;
-  //   fetchPredictData();
-  // });
-
-  // DOM 載入後 & 每10秒自動更新
   document.addEventListener('DOMContentLoaded', () => {
     fetchPredictData();
+    // 每 10 秒更新一次
     setInterval(() => {
       fetchPredictData();
     }, 10000);
