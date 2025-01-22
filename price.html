@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <title>Plotly Candlestick + Extremes + Volume (Time +08:00, flipped markers)</title>
+  <title>Plotly Candlestick + Extremes + Volume (UTC+8 Fixed)</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     body {
@@ -63,36 +63,41 @@
     <input type="number" id="extreme_window" value="0" min="0" />
   </div>
 
-  <!-- 顯示倒數第二個極值的可信度(英文) -->
+  <!-- 顯示倒數第二個極值的可信度 (英文) -->
   <div id="confidence_div" style="margin: 10px 0; font-size: 1.2rem;">
-    <!-- JavaScript 會在這裡動態塞資料 -->
+    <!-- JS 會在這裡動態填入 -->
   </div>
 
   <div id="chart"></div>
 </div>
 
 <script>
-  // === (A) 將後端回傳的 UTC 時間字串轉為 "YYYY-MM-DDTHH:mm:ss+08:00" 格式 ===
+  // === (A) 將 UTC 時間轉為 "YYYY-MM-DDTHH:mm:ss+08:00" 格式 ===
   function toTaiwanTime(isoString) {
+    // 1) 先把 UTC 時間 parse 成 Date 物件
     const utcDate = new Date(isoString);
-    // +8 小時
+
+    // 2) 加上 8 小時
     utcDate.setHours(utcDate.getHours() + 8);
+
+    // 3) 手動組合成 "YYYY-MM-DDTHH:mm:ss+08:00"
     const yyyy = utcDate.getFullYear();
     const MM = String(utcDate.getMonth() + 1).padStart(2, '0');
     const dd = String(utcDate.getDate()).padStart(2, '0');
     const hh = String(utcDate.getHours()).padStart(2, '0');
     const mm = String(utcDate.getMinutes()).padStart(2, '0');
     const ss = String(utcDate.getSeconds()).padStart(2, '0');
-    // 結尾加 +08:00，Plotly 會解析為 UTC+8
+
+    // ※ 在結尾加 "+08:00"，讓 Plotly 解析成「UTC+8」時間
     return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}+08:00`;
   }
 
-  // cluster 顏色範例
+  // cluster 顏色參考
   const clusterColors = [
     '#66c2a5', 
     '#fdae61', 
     '#3288bd', 
-    '#fee08b', 
+    '#fee08b',
     '#d53e4f', 
     '#5e4fa2'
   ];
@@ -101,9 +106,9 @@
   let time_interval = "15m";
   let extreme_window = 0;
 
-  // === (B) 呼叫後端 API ===
+  // === (B) 向後端抓資料 ===
   async function fetchPredictData() {
-    // 請改成自己後端 API
+    // 修改為自己的後端 API
     const url = "https://rainmaker32.com/predict";
     const postBody = {
       symbol,
@@ -119,7 +124,7 @@
       });
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(`HTTP ${res.status}: ${errorData.error}`);
+        throw new Error(`${res.status}, ${errorData.error}`);
       }
       const data = await res.json();
       console.log("Data from backend =", data);
@@ -127,18 +132,19 @@
       // 顯示倒數第二個極值的可信度
       showSecondLastExtremeConfidence(data);
 
-      // 把 extremes / ohlc 時間改成台灣時區(+08:00)
+      // 把 extremes & ohlc 的 time 改成 +08:00
       convertToTaiwanTime(data);
 
-      // 畫圖
+      // Plotly 畫圖
       plotChart(data);
+
     } catch (err) {
       console.error("fetchPredictData() error:", err);
-      alert("Failed to fetch data. See console for details!");
+      alert("Failed to fetch data. Check console for details!");
     }
   }
 
-  // === (C) 顯示倒數第二個極值的可信度(英文) ===
+  // === (C) 顯示倒數第二個極值的可信度 ===
   function showSecondLastExtremeConfidence(data) {
     const val = data.second_last_extreme_confidence;
     const div = document.getElementById("confidence_div");
@@ -149,7 +155,7 @@
     }
   }
 
-  // === (D) 時間轉台灣時區(+08:00) ===
+  // === (D) 時間欄位轉台灣時間字串 ===
   function convertToTaiwanTime(data) {
     const { extremes, ohlc } = data;
     if (extremes && extremes.length > 0) {
@@ -169,11 +175,11 @@
     const extremes = data.extremes || [];
     const ohlc = data.ohlc || [];
 
-    // 排序
+    // 確保時間排序
     extremes.sort((a, b) => new Date(a.time) - new Date(b.time));
     ohlc.sort((a, b) => new Date(a.time) - new Date(b.time));
 
-    // cluster 分組 => 多筆 candlestick
+    // 依 cluster 分組 => 多筆 candlestick
     const uniqueClusters = [...new Set(ohlc.map(d => d.cluster))].sort((a, b) => a - b);
     const candlestickTraces = uniqueClusters.map(c => {
       const subset = ohlc.filter(x => x.cluster === c);
@@ -187,12 +193,11 @@
         name: `Cluster ${c}`,
         increasing: { line: { color: clusterColors[c] || 'gray' } },
         decreasing: { line: { color: clusterColors[c] || 'gray' } },
-        showlegend: (c === 0)  // 只顯示第一組 cluster 的 legend
+        showlegend: c === 0
       };
     });
 
-    // extremes scatter
-    // ★ 高點 => triangle-down (紅色), 低點 => triangle-up (藍色) ★
+    // extremes scatter (High=red, Low=blue)
     const extremesTrace = {
       x: extremes.map(e => e.time),
       y: extremes.map(e => e.label === 1 ? e.close * 1.02 : e.close * 0.98),
@@ -203,17 +208,15 @@
       marker: {
         color: extremes.map(e => (e.label === 1 ? 'red' : 'blue')),
         size: 12,
-        symbol: extremes.map(e => (e.label === 1 ? 'triangle-down' : 'triangle-up'))
+        symbol: extremes.map(e => (e.label === 1 ? 'triangle-up' : 'triangle-down'))
       },
       type: 'scatter',
       yaxis: 'y1'
     };
 
-    // volume bar (判斷漲跌)
+    // volume bar
     const volumeColors = ohlc.map(d =>
-      (d.close > d.open)
-        ? 'rgba(0,255,0,0.5)'
-        : 'rgba(255,0,0,0.5)'
+      (d.close > d.open) ? 'rgba(0,255,0,0.5)' : 'rgba(255,0,0,0.5)'
     );
     const volumeTrace = {
       x: ohlc.map(d => d.time),
@@ -224,10 +227,9 @@
       yaxis: 'y2'
     };
 
-    // 整合
     const allTraces = [...candlestickTraces, extremesTrace, volumeTrace];
 
-    // (F) 預設只看最近 50 根K
+    // 僅顯示最後 50 根 K
     let xMin, xMax;
     if (ohlc.length > 50) {
       const last50 = ohlc.slice(-50);
@@ -237,21 +239,12 @@
       xMin = ohlc[0].time;
       xMax = ohlc[ohlc.length - 1].time;
     } else {
-      // 若無資料
+      // 若完全沒資料
       xMin = new Date().toISOString();
       xMax = new Date().toISOString();
     }
 
-    // ★ 讓最新 K 線不要貼最右，增加 5% 時間範圍
-    const minTS = new Date(xMin).getTime();
-    const maxTS = new Date(xMax).getTime();
-    const rangeSpan = maxTS - minTS;
-    const extra = rangeSpan * 0.05;  // 5% 空白
-    const newMaxTS = maxTS + extra; 
-    // 轉回 ISO (以免破壞 Plotly 自動解析)
-    xMax = new Date(newMaxTS).toISOString();
-
-    // Plotly layout
+    // Plotly 參數
     const layout = {
       paper_bgcolor: "#2d2d2d",
       plot_bgcolor: "#2d2d2d",
@@ -290,17 +283,17 @@
     Plotly.newPlot('chart', allTraces, layout, { responsive: true });
   }
 
-  // === (G) 綁定事件 & 自動刷新 ===
+  // === (F) 綁定事件 & 自動刷新 ===
   document.getElementById('time_interval').addEventListener('change', () => {
     time_interval = document.getElementById('time_interval').value;
     fetchPredictData();
   });
+
   document.getElementById('extreme_window').addEventListener('change', () => {
     extreme_window = parseInt(document.getElementById('extreme_window').value) || 0;
     fetchPredictData();
   });
 
-  // DOM 載入後，先 fetch 一次，再每 10 秒刷新
   document.addEventListener('DOMContentLoaded', () => {
     fetchPredictData();
     setInterval(() => {
