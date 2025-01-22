@@ -2,10 +2,9 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <title>Plotly Candlestick + Extremes + Volume (Auto Refresh + Responsive Layout)</title>
+  <title>Plotly Candlestick + Extremes + Volume (UTC+8 Fixed)</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    /* 1. 全域設定：自適應佈局、深色背景 */
     body {
       margin: 0;
       padding: 0;
@@ -14,8 +13,6 @@
       background-color: #2d2d2d;
       color: #ccc;
     }
-
-    /* 2. 容器寬度自適應 + 最大寬度 */
     #container {
       margin: 0 auto;
       padding: 10px;
@@ -23,8 +20,6 @@
       width: 100%;
       box-sizing: border-box;
     }
-
-    /* 3. 上方控制介面 */
     #controls {
       margin: 10px 0;
       display: flex;
@@ -33,11 +28,6 @@
       align-items: center;
       gap: 10px;
     }
-
-    #controls label {
-      font-size: 1rem;
-    }
-
     #controls select,
     #controls input {
       background-color: #444;
@@ -46,26 +36,11 @@
       padding: 6px 8px;
       font-size: 1.2rem;
     }
-
-    #update_btn {
-      background-color: #555;
-      color: #fff;
-      border: 1px solid #666;
-      cursor: pointer;
-      font-size: 1rem;
-      padding: 6px 12px;
-    }
-    #update_btn:hover {
-      background-color: #666;
-    }
-
-    /* 4. 圖表區域：寬度隨容器自適應 */
     #chart {
       width: 100%;
       height: 600px; 
       margin: 0 auto;
     }
-
     @media (max-width: 600px) {
       #chart {
         height: 400px;
@@ -76,7 +51,6 @@
 <body>
 
 <div id="container">
-  <!-- (A) 上方控制欄位 -->
   <div id="controls">
     <label for="time_interval">Time Interval:</label>
     <select id="time_interval">
@@ -89,53 +63,57 @@
     <input type="number" id="extreme_window" value="0" min="0" />
   </div>
 
-  <!-- (B) 這裡顯示「倒數第二個 extreme 的可信度」 (已改英文) -->
+  <!-- 顯示倒數第二個極值的可信度 (英文) -->
   <div id="confidence_div" style="margin: 10px 0; font-size: 1.2rem;">
-    <!-- 透過 JS 動態填入 -->
+    <!-- JS 會在這裡動態填入 -->
   </div>
-  
-  <!-- (C) 主圖表區 -->
+
   <div id="chart"></div>
 </div>
 
 <script>
-  // ===== (1) 將後端回傳的 UTC 時間字串轉換為台灣時區 (UTC+8) =====
+  // === (A) 將 UTC 時間轉為 "YYYY-MM-DDTHH:mm:ss+08:00" 格式 ===
   function toTaiwanTime(isoString) {
-    // 1) 先取得原 UTC 時間
+    // 1) 先把 UTC 時間 parse 成 Date 物件
     const utcDate = new Date(isoString);
 
-    // 2) 加上 8 小時(以毫秒計)
-    const taipeiOffsetMS = 8 * 60 * 60 * 1000;
-    const localTime = new Date(utcDate.getTime() + taipeiOffsetMS);
+    // 2) 加上 8 小時
+    utcDate.setHours(utcDate.getHours() + 8);
 
-    // 3) 回傳標準 ISO 格式 (去除最後的 'Z')
-    //    e.g. "2023-01-31T08:00:00"
-    return localTime.toISOString().replace('Z', '');
+    // 3) 手動組合成 "YYYY-MM-DDTHH:mm:ss+08:00"
+    const yyyy = utcDate.getFullYear();
+    const MM = String(utcDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(utcDate.getDate()).padStart(2, '0');
+    const hh = String(utcDate.getHours()).padStart(2, '0');
+    const mm = String(utcDate.getMinutes()).padStart(2, '0');
+    const ss = String(utcDate.getSeconds()).padStart(2, '0');
+
+    // ※ 在結尾加 "+08:00"，讓 Plotly 解析成「UTC+8」時間
+    return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}+08:00`;
   }
 
-  // ===== (2) 區分 cluster 用的顏色 =====
+  // cluster 顏色參考
   const clusterColors = [
-    '#66c2a5', // cluster=0
-    '#fdae61', // cluster=1
-    '#3288bd', // cluster=2
-    '#fee08b', // cluster=3
-    '#d53e4f', // cluster=4
-    '#5e4fa2'  // cluster=5
+    '#66c2a5', 
+    '#fdae61', 
+    '#3288bd', 
+    '#fee08b',
+    '#d53e4f', 
+    '#5e4fa2'
   ];
 
   let symbol = "BTCUSDT";
   let time_interval = "15m";
   let extreme_window = 0;
 
-  // ===== (3) 向後端抓資料 =====
+  // === (B) 向後端抓資料 ===
   async function fetchPredictData() {
-    // 依照實際後端地址修改
-    const url = "https://rainmaker32.com/predict"; 
-
+    // 修改為自己的後端 API
+    const url = "https://rainmaker32.com/predict";
     const postBody = {
-      symbol: symbol,
-      time_interval: time_interval,
-      extreme_window: extreme_window
+      symbol,
+      time_interval,
+      extreme_window
     };
 
     try {
@@ -146,39 +124,38 @@
       });
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(`HTTP error! status: ${res.status}, message: ${errorData.error}`);
+        throw new Error(`${res.status}, ${errorData.error}`);
       }
       const data = await res.json();
       console.log("Data from backend =", data);
 
-      // (A) 顯示倒數第二個極值的可信度 (已改英文)
+      // 顯示倒數第二個極值的可信度
       showSecondLastExtremeConfidence(data);
 
-      // (B) 時間轉成台灣時區
+      // 把 extremes & ohlc 的 time 改成 +08:00
       convertToTaiwanTime(data);
 
-      // (C) 繪圖
+      // Plotly 畫圖
       plotChart(data);
 
     } catch (err) {
       console.error("fetchPredictData() error:", err);
-      alert("Failed to fetch data. Please check console logs!");
+      alert("Failed to fetch data. Check console for details!");
     }
   }
 
-  // ===== (4) 顯示「倒數第二個 extreme 的可信度」 =====
+  // === (C) 顯示倒數第二個極值的可信度 ===
   function showSecondLastExtremeConfidence(data) {
     const val = data.second_last_extreme_confidence;
     const div = document.getElementById("confidence_div");
     if (val !== undefined && val !== null) {
-      // 英文顯示
       div.textContent = `Second last extreme confidence: ${val.toFixed(4)}`;
     } else {
       div.textContent = "Unable to get second last extreme confidence.";
     }
   }
 
-  // ===== (5) 將 extremes / ohlc 的 time 欄位改為台灣時區 =====
+  // === (D) 時間欄位轉台灣時間字串 ===
   function convertToTaiwanTime(data) {
     const { extremes, ohlc } = data;
     if (extremes && extremes.length > 0) {
@@ -193,16 +170,16 @@
     }
   }
 
-  // ===== (6) 繪製圖表 =====
+  // === (E) 繪製圖表 ===
   function plotChart(data) {
     const extremes = data.extremes || [];
     const ohlc = data.ohlc || [];
 
-    // 排序以免亂序
+    // 確保時間排序
     extremes.sort((a, b) => new Date(a.time) - new Date(b.time));
     ohlc.sort((a, b) => new Date(a.time) - new Date(b.time));
 
-    // 建立 K線 traces (依 cluster 分組顯示)
+    // 依 cluster 分組 => 多筆 candlestick
     const uniqueClusters = [...new Set(ohlc.map(d => d.cluster))].sort((a, b) => a - b);
     const candlestickTraces = uniqueClusters.map(c => {
       const subset = ohlc.filter(x => x.cluster === c);
@@ -216,11 +193,11 @@
         name: `Cluster ${c}`,
         increasing: { line: { color: clusterColors[c] || 'gray' } },
         decreasing: { line: { color: clusterColors[c] || 'gray' } },
-        showlegend: c === 0  // 只在第一組顯示 legend
+        showlegend: c === 0
       };
     });
 
-    // extremes scatter (使用不同顏色與圖示)
+    // extremes scatter (High=red, Low=blue)
     const extremesTrace = {
       x: extremes.map(e => e.time),
       y: extremes.map(e => e.label === 1 ? e.close * 1.02 : e.close * 0.98),
@@ -237,7 +214,7 @@
       yaxis: 'y1'
     };
 
-    // Volume bar (紅綠判斷)
+    // volume bar
     const volumeColors = ohlc.map(d =>
       (d.close > d.open) ? 'rgba(0,255,0,0.5)' : 'rgba(255,0,0,0.5)'
     );
@@ -250,10 +227,9 @@
       yaxis: 'y2'
     };
 
-    // 整合
     const allTraces = [...candlestickTraces, extremesTrace, volumeTrace];
 
-    // 若 K 棒很多，預設只看最近 50 根
+    // 僅顯示最後 50 根 K
     let xMin, xMax;
     if (ohlc.length > 50) {
       const last50 = ohlc.slice(-50);
@@ -263,12 +239,12 @@
       xMin = ohlc[0].time;
       xMax = ohlc[ohlc.length - 1].time;
     } else {
-      // 若無資料
+      // 若完全沒資料
       xMin = new Date().toISOString();
       xMax = new Date().toISOString();
     }
 
-    // Plotly 版面
+    // Plotly 參數
     const layout = {
       paper_bgcolor: "#2d2d2d",
       plot_bgcolor: "#2d2d2d",
@@ -307,7 +283,7 @@
     Plotly.newPlot('chart', allTraces, layout, { responsive: true });
   }
 
-  // ===== (7) 綁定事件 & 自動刷新 =====
+  // === (F) 綁定事件 & 自動刷新 ===
   document.getElementById('time_interval').addEventListener('change', () => {
     time_interval = document.getElementById('time_interval').value;
     fetchPredictData();
@@ -318,7 +294,6 @@
     fetchPredictData();
   });
 
-  // DOM 載入後預設先抓資料, 並每10秒自動更新
   document.addEventListener('DOMContentLoaded', () => {
     fetchPredictData();
     setInterval(() => {
