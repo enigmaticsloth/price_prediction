@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <title>Plotly Candlestick + Extremes + Volume (Auto-refresh every 10s, Pan mode)</title>
+  <title>Plotly Candlestick + Extremes + Volume (Taiwan Time, Auto-refresh every 10s)</title>
   <!-- 載入 Plotly JS CDN -->
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
@@ -22,13 +22,13 @@
     }
     #chart {
       width: 90%;
-      height: 800px; /* 調整高度以容納兩個子圖 */
+      height: 800px; /* 調整高度以容納K線與交易量子圖 */
       margin: 0 auto;
     }
   </style>
 </head>
 <body>
-  
+  <!-- 控制介面：選擇Time Interval、Extreme Window 並更新圖表 -->
   <div id="controls">
     <label for="time_interval">Time Interval:</label>
     <select id="time_interval">
@@ -46,25 +46,35 @@
   <div id="chart"></div>
   
   <script>
-  // (A) Cluster color mapping
+  // ★ (A) 先建立函式：將原本的 UTC ISO 時間字串 => 轉成台灣時區 (UTC+8)
+  function toTaiwanTime(isoString) {
+    // 將 isoString 轉成 JavaScript Date 物件（預設視為 UTC）
+    const d = new Date(isoString);
+    // 加 8 小時 (台灣時區 = UTC+8)
+    d.setHours(d.getHours() + 8);
+    // toISOString() 會回傳類似 2025-01-22T08:00:00.000Z，但我們想拿掉末尾 'Z'
+    return d.toISOString().replace('Z', '');
+  }
+
+  // (B) K-Means/LOF cluster 對應顏色
   const clusterColors = [
     '#66c2a5', // cluster=0
     '#fdae61', // cluster=1
     '#3288bd', // cluster=2
     '#fee08b', // cluster=3
-    '#d53e4f', // cluster=4
-    '#5e4fa2'  // cluster=5
+    '#d53e4f', // cluster=4 (LOF outlier)
+    '#5e4fa2'  // cluster=5 (若有更多群)
   ];
 
-  // (B) Global Variables for Parameters
+  // (C) 全域參數
   let symbol = "BTCUSDT";
-  let time_interval = "15m"; // Default selected in dropdown
+  let time_interval = "15m"; // 預設 15 分鐘
   let extreme_window = 0;
 
-  // (C) Fetch data from Flask API
+  // (D) 從 Flask API 抓資料
   async function fetchPredictData() {
-    // ★修改處★：改用您的 HTTPS 網址 (domain)，而非 HTTP IP
-    const url = "https://rainmaker32.com/predict";  
+    // 請將此 URL 改為您真正的 HTTPS API 端點，例如 https://rainmaker32.com/predict
+    const url = "https://rainmaker32.com/predict";
 
     const postBody = {
       symbol: symbol,
@@ -86,6 +96,11 @@
 
       const data = await res.json();
       console.log("Data from backend =", data);
+
+      // ★ (E) 在繪圖前，先把後端回傳的 UTC 時間 => 轉為台灣時間
+      convertToTaiwanTime(data);
+
+      // 再進行繪圖
       plotChart(data);
 
     } catch (err) {
@@ -94,16 +109,32 @@
     }
   }
 
-  // (D) Plot the candlestick + extremes + Volume
-  function plotChart(data) {
-    let extremes = data.extremes || [];
-    let ohlc = data.ohlc || [];
+  // ★ (F) 將 data.extremes 與 data.ohlc 裡面的 time 欄位都轉成台灣時間
+  function convertToTaiwanTime(data) {
+    const { extremes, ohlc } = data;
+    
+    if (extremes && extremes.length > 0) {
+      extremes.forEach(e => {
+        e.time = toTaiwanTime(e.time);
+      });
+    }
+    if (ohlc && ohlc.length > 0) {
+      ohlc.forEach(o => {
+        o.time = toTaiwanTime(o.time);
+      });
+    }
+  }
 
-    // 1. sort them by time
+  // (G) 繪製圖表
+  function plotChart(data) {
+    const extremes = data.extremes || [];
+    const ohlc = data.ohlc || [];
+
+    // 1. sort them by time (台灣時間字串)
     extremes.sort((a, b) => new Date(a.time) - new Date(b.time));
     ohlc.sort((a, b) => new Date(a.time) - new Date(b.time));
 
-    // 2. build multiple candlestick traces by cluster
+    // 2. 建立多個 Candlestick trace（依 cluster 區分）
     const uniqueClusters = [...new Set(ohlc.map(d => d.cluster))].sort((a, b) => a - b);
 
     const candlestickTraces = uniqueClusters.map(c => {
@@ -118,22 +149,22 @@
         name: `Cluster ${c}`,
         increasing: { line: { color: clusterColors[c] || 'gray' } },
         decreasing: { line: { color: clusterColors[c] || 'gray' } },
-        showlegend: c === 0 // 只顯示一次圖例
+        showlegend: c === 0 // 只顯示一次圖例(避免重複)
       };
     });
 
-    // 3. extremes scatter with enlarged arrows
+    // 3. extremes scatter (箭頭放大)
     const extremesTrace = {
       x: extremes.map(e => e.time),
-      y: extremes.map(e => e.label === 1 ? e.close * 1.02 : e.close * 0.98),
+      y: extremes.map(e => (e.label === 1 ? e.close * 1.02 : e.close * 0.98)),
       mode: 'markers',
       name: 'Extremes',
-      text: extremes.map(e => e.label === 1 ? 'High' : 'Low'),
+      text: extremes.map(e => (e.label === 1 ? 'High' : 'Low')),
       hovertemplate: 'Time=%{x}<br>Price=%{y}<extra>%{text}</extra>',
       marker: {
-        color: extremes.map(e => e.label === 1 ? 'red' : 'blue'),
-        size: 12, // 增大標記大小
-        symbol: extremes.map(e => e.label === 1 ? 'triangle-up' : 'triangle-down')
+        color: extremes.map(e => (e.label === 1 ? 'red' : 'blue')),
+        size: 12, // 放大箭頭
+        symbol: extremes.map(e => (e.label === 1 ? 'triangle-up' : 'triangle-down'))
       },
       type: 'scatter',
       yaxis: 'y1'
@@ -154,7 +185,7 @@
     // 5. Combine all traces
     const allTraces = [...candlestickTraces, extremesTrace, volumeTrace];
 
-    // 6. Determine default x-range => last 50 bars
+    // 6. 初始 x 軸範圍 => 取最後 50 筆
     let xMin, xMax;
     if (ohlc.length > 50) {
       const last50 = ohlc.slice(-50);
@@ -164,14 +195,15 @@
       xMin = ohlc[0].time;
       xMax = ohlc[ohlc.length - 1].time;
     } else {
+      // 如果資料為空，就用現在時間
       xMin = new Date().toISOString();
       xMax = new Date().toISOString();
     }
 
-    // 7. Layout with subplots for candlestick and volume
+    // 7. Layout (subplots: candlestick + volume)
     const layout = {
       xaxis: {
-        title: 'Time',
+        title: 'Time (Taiwan Time)',
         type: 'date',
         range: [xMin, xMax],
         domain: [0, 1],
@@ -189,33 +221,29 @@
         anchor: 'x',
         side: 'left'
       },
-      dragmode: 'pan', // 預設為 pan 模式
+      dragmode: 'pan',
       legend: {
-        orientation: "h",
+        orientation: 'h',
         x: 0.1,
         y: 1.15
       },
-      margin: { t: 50 } // 增加上方邊距以避免圖例遮擋
+      margin: { t: 50 }
     };
 
-    // 8. Render with subplots
+    // 8. 繪圖
     Plotly.newPlot('chart', allTraces, layout, { responsive: true });
   }
 
-  // (E) Handle Update Button Click
+  // (H) Update 按鈕邏輯
   document.getElementById('update_btn').addEventListener('click', () => {
-    // 取得使用者輸入的 time_interval 與 extreme_window
     time_interval = document.getElementById('time_interval').value;
     extreme_window = parseInt(document.getElementById('extreme_window').value) || 0;
-
-    // Fetch and update chart
     fetchPredictData();
   });
 
-  // (F) Initial Fetch & Auto-update every 10 seconds
-  document.addEventListener("DOMContentLoaded", () => {
+  // (I) 頁面載入後 & 自動每10秒更新
+  document.addEventListener('DOMContentLoaded', () => {
     fetchPredictData();
-    // 每 10 秒自動更新
     setInterval(() => {
       fetchPredictData();
     }, 10000);
