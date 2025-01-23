@@ -116,17 +116,26 @@
     '#5e4fa2'
   ];
 
+  // 符號映射：前端選擇的符號對應後端實際查詢的符號
+  const symbolMap = {
+    'BTCUSDT': 'BTC',
+    'ETHUSDT': 'ETH',
+    'SOLUSDT': 'SOL',
+    'XRPUSDT': 'XRP'
+  };
+
   // 初始值 (對應表單預設)
-  let symbol = "BTCUSDT";
+  let selectedSymbol = "BTCUSDT";
   let time_interval = "15m";
   let extreme_window = 0;
 
   // === (B) 向後端抓資料 ===
   async function fetchPredictData() {
     // 修改為自己的後端 API
-    const url = "https://rainmaker32.com/predict";
+    const url = "http://127.0.0.1:5000/predict";  // 根據實際情況修改
+    const actualSymbol = symbolMap[selectedSymbol] || selectedSymbol;  // 映射後的符號
     const postBody = {
-      symbol,
+      symbol: actualSymbol,
       time_interval,
       extreme_window
     };
@@ -300,7 +309,7 @@
 
   // === (F) 綁定事件 & 自動刷新 ===
   document.getElementById('symbol').addEventListener('change', () => {
-    symbol = document.getElementById('symbol').value;
+    selectedSymbol = document.getElementById('symbol').value;
     fetchPredictData();
   });
 
