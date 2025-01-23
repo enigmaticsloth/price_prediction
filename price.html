@@ -2,8 +2,10 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <title>Plotly Candlestick + Extremes + Volume (UTC+8 Fixed)</title>
+  <title>Plotly Candlestick + Extremes Example</title>
+  <!-- Plotly JS (CDN) -->
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
   <style>
     body {
       margin: 0;
@@ -40,6 +42,13 @@
       padding: 6px 8px;
       font-size: 1rem;
     }
+    #controls button {
+      background-color: #666;
+      color: #fff;
+      border: 1px solid #888;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
     #chart {
       width: 100%;
       height: 600px;
@@ -50,51 +59,127 @@
         height: 400px;
       }
     }
+    #confidence_div {
+      margin: 10px 0;
+      font-size: 1.2rem;
+    }
   </style>
 </head>
 <body>
 
 <div id="container">
-  <div id="controls">
 
-    <!-- 新增交易對下拉選單 -->
+  <!-- (A) 控制區塊：可選交易對、time_interval、extreme_window -->
+  <div id="controls">
     <label for="symbol">Symbol:</label>
     <select id="symbol">
+      <!-- 這裡先靜態列出四種交易對，若要擴充可自行增減 -->
       <option value="BTCUSDT" selected>BTCUSDT</option>
       <option value="ETHUSDT">ETHUSDT</option>
       <option value="SOLUSDT">SOLUSDT</option>
       <option value="XRPUSDT">XRPUSDT</option>
     </select>
-    
+
     <label for="time_interval">Time Interval:</label>
     <select id="time_interval">
+      <!-- 先靜態列出四種常見週期 -->
       <option value="1m">1 Minute</option>
       <option value="15m" selected>15 Minutes</option>
       <option value="1h">1 Hour</option>
+      <option value="4h">4 Hours</option>
     </select>
     
     <label for="extreme_window">Extreme Window:</label>
-    <input type="number" id="extreme_window" value="0" min="0" />
+    <input type="number" id="extreme_window" value="0" min="0" style="width:80px;" />
+    
+    <button id="btnQuery">查詢</button>
   </div>
 
-  <!-- 顯示倒數第二個極值的可信度 (英文) -->
-  <div id="confidence_div" style="margin: 10px 0; font-size: 1.2rem;">
-    <!-- JS 會在這裡動態填入 -->
-  </div>
+  <!-- (B) 顯示「倒數第二個極值的可信度」 -->
+  <div id="confidence_div"></div>
 
+  <!-- (C) 圖表容器 -->
   <div id="chart"></div>
+
 </div>
 
 <script>
-  // === (A) 將 UTC 時間轉為 "YYYY-MM-DDTHH:mm:ss+08:00" 格式 ===
-  function toTaiwanTime(isoString) {
-    // 1) 先把 UTC 時間 parse 成 Date 物件
-    const utcDate = new Date(isoString);
+  // 1) 後端 API 路徑 (若已設定好 HTTPS，就用 https://rainmaker32.com/predict)
+  //   若是 HTTP + 指定 port，例如: "http://rainmaker32.com:5000/predict"
+  const PREDICT_URL = "https://rainmaker32.com/predict";
 
-    // 2) 加上 8 小時
+  // 2) 綁定按鈕
+  document.addEventListener("DOMContentLoaded", () => {
+    const btnQuery = document.getElementById("btnQuery");
+    btnQuery.addEventListener("click", fetchPredictData);
+
+    // 預設先自動跑一次查詢
+    fetchPredictData();
+  });
+
+  // 3) 取得表單參數並發送 POST
+  async function fetchPredictData() {
+    // 讀取表單
+    const symbol = document.getElementById("symbol").value;
+    const time_interval = document.getElementById("time_interval").value;
+    const extreme_window = parseInt(document.getElementById("extreme_window").value) || 0;
+
+    // 組成 POST Body
+    const reqBody = {
+      symbol,
+      time_interval,
+      extreme_window
+    };
+
+    try {
+      // 向後端發送 POST
+      const res = await fetch(PREDICT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody)
+      });
+
+      if(!res.ok) {
+        // 若後端回傳錯誤
+        const errData = await res.json();
+        throw new Error(`HTTP ${res.status}, ${errData.error || res.statusText}`);
+      }
+
+      const data = await res.json();
+      console.log("Predict Data =", data);
+
+      // 顯示 second_last_extreme_confidence
+      showSecondLastExtremeConfidence(data);
+
+      // 把 extremes & ohlc 的 time 改成台灣時區 (+08:00) (若不需要可拿掉)
+      convertToTaiwanTime(data);
+
+      // 交給 Plotly 畫圖
+      plotChart(data);
+
+    } catch(err) {
+      console.error("fetchPredictData Error:", err);
+      alert("Failed to fetch data. " + err.message);
+    }
+  }
+
+  // 4) 顯示倒數第二個極值的可信度
+  function showSecondLastExtremeConfidence(data) {
+    const val = data.second_last_extreme_confidence;
+    const div = document.getElementById("confidence_div");
+    if (val !== undefined && val !== null) {
+      div.textContent = `Second last extreme confidence: ${val.toFixed(4)}`;
+    } else {
+      div.textContent = "No second last extreme confidence available.";
+    }
+  }
+
+  // 5) 將 UTC 時間轉為台灣時間 "YYYY-MM-DDTHH:mm:ss+08:00"
+  function toTaiwanTime(isoString) {
+    const utcDate = new Date(isoString);
+    // 加上 8 小時
     utcDate.setHours(utcDate.getHours() + 8);
 
-    // 3) 手動組合成 "YYYY-MM-DDTHH:mm:ss+08:00"
     const yyyy = utcDate.getFullYear();
     const MM = String(utcDate.getMonth() + 1).padStart(2, '0');
     const dd = String(utcDate.getDate()).padStart(2, '0');
@@ -102,143 +187,46 @@
     const mm = String(utcDate.getMinutes()).padStart(2, '0');
     const ss = String(utcDate.getSeconds()).padStart(2, '0');
 
-    // ※ 在結尾加 "+08:00"，讓 Plotly 解析成「UTC+8」時間
     return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}+08:00`;
   }
 
-  // 供不同 cluster 使用的顏色
-  const clusterColors = [
-    '#66c2a5',
-    '#fdae61',
-    '#3288bd',
-    '#fee08b',
-    '#d53e4f',
-    '#5e4fa2'
-  ];
-
-  // 符號映射：前端選擇的符號對應後端實際查詢的符號
-  const symbolMap = {
-    'BTCUSDT': 'BTC',
-    'ETHUSDT': 'ETH',
-    'SOLUSDT': 'SOL',
-    'XRPUSDT': 'XRP'
-  };
-
-  // 初始值 (對應表單預設)
-  let selectedSymbol = "BTCUSDT";
-  let time_interval = "15m";
-  let extreme_window = 0;
-
-  // === (B) 向後端抓資料 ===
-  async function fetchPredictData() {
-    // 修改為自己的後端 API
-    const url = "https://rainmaker32.com/predict";  // 已更新為公開域名
-    const actualSymbol = symbolMap[selectedSymbol] || selectedSymbol;  // 映射後的符號
-    const postBody = {
-      symbol: actualSymbol,
-      time_interval,
-      extreme_window
-    };
-
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(postBody)
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(`${res.status}, ${errorData.error}`);
-      }
-      const data = await res.json();
-      console.log("Data from backend =", data);
-
-      // 顯示倒數第二個極值的可信度
-      showSecondLastExtremeConfidence(data);
-
-      // 把 extremes & ohlc 的 time 改成 +08:00
-      convertToTaiwanTime(data);
-
-      // Plotly 畫圖
-      plotChart(data);
-
-    } catch (err) {
-      console.error("fetchPredictData() error:", err);
-      alert("Failed to fetch data. Check console for details!");
-    }
-  }
-
-  // === (C) 顯示倒數第二個極值的可信度 ===
-  function showSecondLastExtremeConfidence(data) {
-    const val = data.second_last_extreme_confidence;
-    const div = document.getElementById("confidence_div");
-    if (val !== undefined && val !== null) {
-      div.textContent = `Second last extreme confidence: ${val.toFixed(4)}`;
-    } else {
-      div.textContent = "Unable to get second last extreme confidence.";
-    }
-  }
-
-  // === (D) 時間欄位轉台灣時間字串 ===
   function convertToTaiwanTime(data) {
-    const { extremes, ohlc } = data;
-    if (extremes && extremes.length > 0) {
-      extremes.forEach(e => {
+    // extremes
+    if (data.extremes && Array.isArray(data.extremes)) {
+      data.extremes.forEach(e => {
         e.time = toTaiwanTime(e.time);
       });
     }
-    if (ohlc && ohlc.length > 0) {
-      ohlc.forEach(o => {
+    // ohlc
+    if (data.ohlc && Array.isArray(data.ohlc)) {
+      data.ohlc.forEach(o => {
         o.time = toTaiwanTime(o.time);
       });
     }
   }
 
-  // === (E) 繪製圖表 ===
+  // 6) Plotly 畫圖
   function plotChart(data) {
     const extremes = data.extremes || [];
     const ohlc = data.ohlc || [];
 
     // 確保時間排序
-    extremes.sort((a, b) => new Date(a.time) - new Date(b.time));
-    ohlc.sort((a, b) => new Date(a.time) - new Date(b.time));
+    ohlc.sort((a,b) => new Date(a.time) - new Date(b.time));
+    extremes.sort((a,b) => new Date(a.time) - new Date(b.time));
 
-    // 依 cluster 分組 => 多筆 candlestick
-    const uniqueClusters = [...new Set(ohlc.map(d => d.cluster))].sort((a, b) => a - b);
-    const candlestickTraces = uniqueClusters.map(c => {
-      const subset = ohlc.filter(x => x.cluster === c);
-      return {
-        x: subset.map(d => d.time),
-        open: subset.map(d => d.open),
-        high: subset.map(d => d.high),
-        low: subset.map(d => d.low),
-        close: subset.map(d => d.close),
-        type: 'candlestick',
-        name: `Cluster ${c}`,
-        increasing: { line: { color: clusterColors[c] || 'gray' } },
-        decreasing: { line: { color: clusterColors[c] || 'gray' } },
-        showlegend: c === 0
-      };
-    });
-
-    // extremes scatter (High=red, Low=blue)
-    const extremesTrace = {
-      x: extremes.map(e => e.time),
-      y: extremes.map(e => e.label === 1 ? e.close * 1.02 : e.close * 0.98),
-      mode: 'markers',
-      name: 'Extremes',
-      text: extremes.map(e => (e.label === 1 ? 'High' : 'Low')),
-      hovertemplate: 'Time=%{x}<br>Price=%{y}<extra>%{text}</extra>',
-      marker: {
-        color: extremes.map(e => (e.label === 1 ? 'red' : 'blue')),
-        size: 12,
-        symbol: extremes.map(e => (e.label === 1 ? 'triangle-up' : 'triangle-down'))
-      },
-      type: 'scatter',
+    // K線
+    const candlestickTrace = {
+      x: ohlc.map(x => x.time),
+      open: ohlc.map(x => x.open),
+      high: ohlc.map(x => x.high),
+      low: ohlc.map(x => x.low),
+      close: ohlc.map(x => x.close),
+      type: 'candlestick',
+      name: 'Candlestick',
       yaxis: 'y1'
     };
 
-    // volume bar
+    // Volume (柱狀)
     const volumeColors = ohlc.map(d =>
       (d.close > d.open) ? 'rgba(0,255,0,0.5)' : 'rgba(255,0,0,0.5)'
     );
@@ -251,35 +239,52 @@
       yaxis: 'y2'
     };
 
-    const allTraces = [...candlestickTraces, extremesTrace, volumeTrace];
+    // Extremes (High=紅三角向上, Low=藍三角向下)
+    const extremesTrace = {
+      x: extremes.map(e => e.time),
+      y: extremes.map(e =>
+        e.label === 1
+          ? e.close * 1.02 // 高點略上移
+          : e.close * 0.98 // 低點略下移
+      ),
+      mode: 'markers',
+      name: 'Extremes',
+      text: extremes.map(e => (e.label === 1 ? 'High' : 'Low')),
+      hovertemplate: 'Time=%{x}<br>Price=%{y}<extra>%{text}</extra>',
+      marker: {
+        color: extremes.map(e => (e.label === 1 ? 'red' : 'blue')),
+        size: 12,
+        symbol: extremes.map(e => (e.label === 1 ? 'triangle-up' : 'triangle-down'))
+      },
+      yaxis: 'y1'
+    };
 
-    // 僅顯示最後 50 根 K
+    // 只顯示最後 50~100 根 K (可自行調整)
     let xMin, xMax;
     if (ohlc.length > 50) {
       const last50 = ohlc.slice(-50);
       xMin = last50[0].time;
-      xMax = last50[last50.length - 1].time;
+      xMax = last50[last50.length-1].time;
     } else if (ohlc.length > 0) {
       xMin = ohlc[0].time;
-      xMax = ohlc[ohlc.length - 1].time;
+      xMax = ohlc[ohlc.length-1].time;
     } else {
-      // 若完全沒資料
       xMin = new Date().toISOString();
       xMax = new Date().toISOString();
     }
 
-    // Plotly 參數
+    // Layout
     const layout = {
       paper_bgcolor: "#2d2d2d",
       plot_bgcolor: "#2d2d2d",
       font: { color: "#ccc" },
       xaxis: {
-        title: 'Time (Taiwan Time)',
         type: 'date',
         range: [xMin, xMax],
         domain: [0, 1],
         anchor: 'y1',
-        gridcolor: '#444'
+        gridcolor: '#444',
+        title: 'Time (UTC+8)'
       },
       yaxis: {
         title: 'Price',
@@ -299,37 +304,17 @@
       legend: {
         orientation: 'h',
         x: 0.1,
-        y: 1.15
+        y: 1.1
       },
       margin: { t: 50 }
     };
 
-    Plotly.newPlot('chart', allTraces, layout, { responsive: true });
+    // Trace 組合
+    const dataTraces = [candlestickTrace, volumeTrace, extremesTrace];
+
+    Plotly.newPlot('chart', dataTraces, layout, {responsive: true});
   }
-
-  // === (F) 綁定事件 & 自動刷新 ===
-  document.getElementById('symbol').addEventListener('change', () => {
-    selectedSymbol = document.getElementById('symbol').value;
-    fetchPredictData();
-  });
-
-  document.getElementById('time_interval').addEventListener('change', () => {
-    time_interval = document.getElementById('time_interval').value;
-    fetchPredictData();
-  });
-
-  document.getElementById('extreme_window').addEventListener('change', () => {
-    extreme_window = parseInt(document.getElementById('extreme_window').value) || 0;
-    fetchPredictData();
-  });
-
-  document.addEventListener('DOMContentLoaded', () => {
-    fetchPredictData();
-    // 10 秒自動刷新一次
-    setInterval(() => {
-      fetchPredictData();
-    }, 10000);
-  });
 </script>
+
 </body>
 </html>
