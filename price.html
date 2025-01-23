@@ -28,17 +28,21 @@
       align-items: center;
       gap: 10px;
     }
+    #controls label {
+      font-weight: bold;
+      margin-right: 5px;
+    }
     #controls select,
     #controls input {
       background-color: #444;
       color: #fff;
       border: 1px solid #666;
       padding: 6px 8px;
-      font-size: 1.2rem;
+      font-size: 1rem;
     }
     #chart {
       width: 100%;
-      height: 600px; 
+      height: 600px;
       margin: 0 auto;
     }
     @media (max-width: 600px) {
@@ -52,6 +56,16 @@
 
 <div id="container">
   <div id="controls">
+
+    <!-- 新增交易對下拉選單 -->
+    <label for="symbol">Symbol:</label>
+    <select id="symbol">
+      <option value="BTCUSDT" selected>BTCUSDT</option>
+      <option value="ETHUSDT">ETHUSDT</option>
+      <option value="SOLUSDT">SOLUSDT</option>
+      <option value="XRPUSDT">XRPUSDT</option>
+    </select>
+    
     <label for="time_interval">Time Interval:</label>
     <select id="time_interval">
       <option value="1m">1 Minute</option>
@@ -92,16 +106,17 @@
     return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}+08:00`;
   }
 
-  // cluster 顏色參考
+  // 供不同 cluster 使用的顏色
   const clusterColors = [
-    '#66c2a5', 
-    '#fdae61', 
-    '#3288bd', 
+    '#66c2a5',
+    '#fdae61',
+    '#3288bd',
     '#fee08b',
-    '#d53e4f', 
+    '#d53e4f',
     '#5e4fa2'
   ];
 
+  // 初始值 (對應表單預設)
   let symbol = "BTCUSDT";
   let time_interval = "15m";
   let extreme_window = 0;
@@ -284,6 +299,11 @@
   }
 
   // === (F) 綁定事件 & 自動刷新 ===
+  document.getElementById('symbol').addEventListener('change', () => {
+    symbol = document.getElementById('symbol').value;
+    fetchPredictData();
+  });
+
   document.getElementById('time_interval').addEventListener('change', () => {
     time_interval = document.getElementById('time_interval').value;
     fetchPredictData();
@@ -296,6 +316,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     fetchPredictData();
+    // 10 秒自動刷新一次
     setInterval(() => {
       fetchPredictData();
     }, 10000);
