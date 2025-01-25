@@ -58,7 +58,7 @@
       <option value="ETHUSDT">ETHUSDT</option>
       <option value="SOLUSDT">SOLUSDT</option>
       <option value="XRPUSDT">XRPUSDT</option>
-      <option value="DOGEUSDT">DOGEUSDT</option> <!-- 修正此處 -->
+      <option value="DOGEUSDT">DOGEUSDT</option> <!-- 確保顯示為 DOGEUSDT -->
     </select>
 
     <label for="time_interval">Time Interval:</label>
@@ -89,6 +89,15 @@
 // 後端 API URL (若有 HTTPS / 代理請自行調整)
 const PREDICT_URL = "https://rainmaker32.com/predict";
 
+// 定義 symbol 映射
+const symbolMapping = {
+  "BTCUSDT": "BTC",
+  "ETHUSDT": "ETH",
+  "SOLUSDT": "SOL",
+  "XRPUSDT": "XRP",
+  "DOGEUSDT": "DOGE"
+};
+
 // 1. 事件監聽 -> 當使用者改變 symbol / time_interval / extreme_window，都自動 fetch
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("symbol").addEventListener("change", fetchPredictData);
@@ -101,7 +110,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // 2. 調用後端 API
 async function fetchPredictData() {
-  const symbol = document.getElementById("symbol").value;
+  const selectedSymbol = document.getElementById("symbol").value;
+  const symbol = symbolMapping[selectedSymbol] || selectedSymbol; // 映射後的 symbol
   const time_interval = document.getElementById("time_interval").value;
   const extreme_window = parseInt(document.getElementById("extreme_window").value) || 0;
 
